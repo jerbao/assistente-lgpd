@@ -7,6 +7,7 @@ from fastmcp import FastMCP
 from indexar import PASTA_DADOS, abrirIndice
 
 mcp = FastMCP("lgpd")
+INDICE = abrirIndice()
 
 DOCUMENTOS = {"lgpd": "LGPD", "incidente": "Resolução CD/ANPD nº 15/2024", "pequenoPorte": "Resolução CD/ANPD nº 2/2022"}
 MULTA_PERCENTUAL = 0.02
@@ -35,7 +36,7 @@ def somarDiasUteis(inicio: date, dias: int) -> date:
 def buscarNaBase(consulta: str, k: int = 4) -> str:
     if not 1 <= k <= 10:
         return "erro: k deve estar entre 1 e 10"
-    trechos = abrirIndice().similarity_search(consulta, k=k)
+    trechos = INDICE.similarity_search(consulta, k=k)
     return "\n\n".join(trecho.page_content for trecho in trechos)
 
 
