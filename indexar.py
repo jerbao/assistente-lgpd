@@ -32,18 +32,23 @@ def abrirIndice() -> Chroma:
     )
 
 
-def dividirArtigos(artigos: dict[str, str]) -> list[Document]:
+def dividirArtigos(base: dict) -> list[Document]:
     divisor = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, separators=[" § ", " Parágrafo único", "; ", " "])
     trechos = []
-    for numero, texto in artigos.items():
-        for posicao, pedaco in enumerate(divisor.split_text(texto)):
-            trechos.append(Document(id=f"art{numero}-{posicao}", page_content=f"[LGPD, art. {numero}] {pedaco}", metadata={"artigo": numero}))
+    for chave, documento in base.items():
+        for numero, texto in documento["artigos"].items():
+            for posicao, pedaco in enumerate(divisor.split_text(texto)):
+                trechos.append(Document(
+                    id=f"{chave}-art{numero}-{posicao}",
+                    page_content=f"[{documento['nome']}, art. {numero}] {pedaco}",
+                    metadata={"documento": documento["nome"], "artigo": numero, "fonte": documento["url"]},
+                ))
     return trechos
 
 
 if __name__ == "__main__":
-    artigos = json.loads((PASTA_DADOS / "artigos.json").read_text())
-    trechos = dividirArtigos(artigos)
+    base = json.loads((PASTA_DADOS / "artigos.json").read_text())
+    trechos = dividirArtigos(base)
     indice = abrirIndice()
     indice.add_documents(trechos, ids=[trecho.id for trecho in trechos])
     print(len(trechos), "trechos indexados, total no índice:", len(indice.get()["ids"]))
