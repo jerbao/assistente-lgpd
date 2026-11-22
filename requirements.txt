@@ -9,3 +9,4 @@ fastmcp
 langgraph
 langchain-openrouter
 mcp-server-time
+pyyaml

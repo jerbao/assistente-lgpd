@@ -4,10 +4,12 @@ from typing import Annotated, Literal
 
 from langchain.chat_models import init_chat_model
 from langchain.mcp import MCPAdapter
+from langchain_core.tools import tool
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
+import yaml
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, TypedDict
 
@@ -25,7 +27,11 @@ Você tira dúvidas sobre a LGPD e as resoluções da ANPD para o setor de priva
 - Quando o usuário disser "hoje", "ontem" ou não disser a data, consulte a data atual com tempo_get_current_time no fuso America/Sao_Paulo. Nunca suponha a data.
 - Só use pequenoPorte=true se o usuário disser que a empresa é microempresa, empresa de pequeno porte ou startup.
 - Termine a resposta citando o documento e o artigo, como (LGPD, art. 19).
-- Seja breve: no máximo cinco frases."""
+- Seja breve: no máximo cinco frases, a não ser que uma skill peça outro formato.
+- Se o pedido corresponder a uma skill do catálogo abaixo, chame carregarSkill com o nome dela antes de qualquer outra ferramenta e siga as instruções.
+
+# Skills
+{catalogo}"""
 
 AVALIACAO = """# Tarefa
 Diga se algum dos trechos abaixo traz a informação que a pergunta pede, mesmo com outras palavras.
@@ -54,6 +60,25 @@ BUSCAR_DE_NOVO = "Os trechos recuperados não respondem à pergunta. Se um deles
 SEM_RESPOSTA = "Os trechos recuperados não respondem à pergunta e as buscas acabaram. Se um deles for um pedaço cortado do artigo certo, leia o artigo inteiro com lerArtigo. Se não for, diga que não encontrou essa informação na LGPD nem nas resoluções da ANPD, sem citar artigo."
 
 MAX_REESCRITAS = 2
+
+
+PASTA_SKILLS = PASTA_PROJETO / "skills"
+
+
+def lerCatalogo() -> str:
+    linhas = []
+    for arquivo in sorted(PASTA_SKILLS.glob("*/SKILL.md")):
+        cabecalho = yaml.safe_load(arquivo.read_text().split("---")[1])
+        linhas.append(f"- {cabecalho['name']}: {cabecalho['description']}")
+    return "\n".join(linhas)
+
+
+@tool(description="Carrega as instruções completas de uma skill do catálogo pelo nome.")
+def carregarSkill(nome: str) -> str:
+    arquivo = PASTA_SKILLS / nome / "SKILL.md"
+    if arquivo.parent.parent != PASTA_SKILLS or not arquivo.exists():
+        return f"erro: não existe a skill {nome!r}"
+    return arquivo.read_text()
 
 
 class Avaliacao(BaseModel):
@@ -99,13 +124,14 @@ def criarAdaptador() -> MCPAdapter:
 
 
 async def montarGrafo(adaptador: MCPAdapter):
-    ferramentas = await adaptador.list_tools()
+    ferramentas = [*await adaptador.list_tools(), carregarSkill]
+    sistema = SISTEMA.format(catalogo=lerCatalogo())
     modeloBase = init_chat_model(MODELO, temperature=0.0)
     modelo = modeloBase.bind_tools(ferramentas)
     avaliador = modeloBase.with_structured_output(Avaliacao)
 
     async def agente(estado: Estado) -> dict:
-        instrucoes = [SystemMessage(SISTEMA)]
+        instrucoes = [SystemMessage(sistema)]
         if estado.get("consultaReescrita"):
             instrucoes.append(SystemMessage(BUSCAR_DE_NOVO.format(consulta=estado["consultaReescrita"])))
         elif estado.get("trechosRespondem") is False:
