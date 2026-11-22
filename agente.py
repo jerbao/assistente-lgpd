@@ -137,7 +137,10 @@ async def montarGrafo(adaptador: MCPAdapter, memoria=None):
             instrucoes.append(SystemMessage(BUSCAR_DE_NOVO.format(consulta=estado["consultaReescrita"])))
         elif estado.get("trechosRespondem") is False:
             instrucoes.append(SystemMessage(SEM_RESPOSTA))
-        resposta = await modelo.ainvoke([*instrucoes, *estado["messages"]])
+        for _ in range(3):
+            resposta = await modelo.ainvoke([*instrucoes, *estado["messages"]])
+            if resposta.text.strip() or resposta.tool_calls:
+                break
         return {"messages": [resposta], "trechosRespondem": None, "consultaReescrita": None}
 
     async def avaliarTrechos(estado: Estado) -> dict:
