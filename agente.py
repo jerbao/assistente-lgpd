@@ -37,7 +37,23 @@ Responda que não quando os trechos só falam do mesmo tema sem responder a perg
 # Trechos
 {trechos}"""
 
-SEM_RESPOSTA = "Os trechos recuperados não respondem à pergunta. Se um deles for um pedaço cortado do artigo certo, leia o artigo inteiro com lerArtigo. Se nenhum for, diga que não encontrou essa informação na LGPD nem nas resoluções da ANPD, sem citar artigo."
+REESCRITA = """# Tarefa
+A busca na LGPD e nas resoluções da ANPD não trouxe a resposta para a pergunta abaixo.
+Reescreva a pergunta como uma consulta curta nos termos da lei: "titular" em vez de "cliente", "controlador" em vez de
+"empresa", "incidente de segurança" em vez de "vazamento", "agente de tratamento de pequeno porte" em vez de "microempresa".
+Não repita nenhuma das consultas já feitas. Responda só com a consulta.
+
+# Pergunta
+{pergunta}
+
+# Consultas já feitas
+{consultas}"""
+
+BUSCAR_DE_NOVO = "Os trechos recuperados não respondem à pergunta. Se um deles for um pedaço cortado do artigo certo, leia o artigo inteiro com lerArtigo. Se não for, busque de novo com buscarNaBase usando a consulta: {consulta}"
+
+SEM_RESPOSTA = "Os trechos recuperados não respondem à pergunta e as buscas acabaram. Se um deles for um pedaço cortado do artigo certo, leia o artigo inteiro com lerArtigo. Se não for, diga que não encontrou essa informação na LGPD nem nas resoluções da ANPD, sem citar artigo."
+
+MAX_REESCRITAS = 2
 
 
 class Avaliacao(BaseModel):
@@ -47,6 +63,7 @@ class Avaliacao(BaseModel):
 class Estado(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     trechosRespondem: NotRequired[bool | None]
+    consultaReescrita: NotRequired[str | None]
 
 
 def ultimaPergunta(estado: Estado) -> str:
@@ -61,6 +78,17 @@ def resultadosDaBusca(estado: Estado) -> list[str]:
         if mensagem.name == "lgpd_buscarNaBase":
             resultados.append(mensagem.text)
     return resultados
+
+
+def consultasDoTurno(estado: Estado) -> list[str]:
+    consultas = []
+    for mensagem in reversed(estado["messages"]):
+        if isinstance(mensagem, HumanMessage):
+            break
+        for chamada in getattr(mensagem, "tool_calls", []):
+            if chamada["name"] == "lgpd_buscarNaBase":
+                consultas.append(chamada["args"]["consulta"])
+    return consultas
 
 
 def criarAdaptador() -> MCPAdapter:
@@ -78,14 +106,26 @@ async def montarGrafo(adaptador: MCPAdapter):
 
     async def agente(estado: Estado) -> dict:
         instrucoes = [SystemMessage(SISTEMA)]
-        if estado.get("trechosRespondem") is False:
+        if estado.get("consultaReescrita"):
+            instrucoes.append(SystemMessage(BUSCAR_DE_NOVO.format(consulta=estado["consultaReescrita"])))
+        elif estado.get("trechosRespondem") is False:
             instrucoes.append(SystemMessage(SEM_RESPOSTA))
         resposta = await modelo.ainvoke([*instrucoes, *estado["messages"]])
-        return {"messages": [resposta], "trechosRespondem": None}
+        return {"messages": [resposta], "trechosRespondem": None, "consultaReescrita": None}
 
     async def avaliarTrechos(estado: Estado) -> dict:
         avaliacao = await avaliador.ainvoke(AVALIACAO.format(pergunta=ultimaPergunta(estado), trechos="\n\n".join(resultadosDaBusca(estado))))
         return {"trechosRespondem": avaliacao.respondem}
+
+    async def reescreverConsulta(estado: Estado) -> dict:
+        consultas = "\n".join(consultasDoTurno(estado))
+        reescrita = await modeloBase.ainvoke(REESCRITA.format(pergunta=ultimaPergunta(estado), consultas=consultas))
+        return {"consultaReescrita": reescrita.text.strip().strip('"')}
+
+    def depoisDaAvaliacao(estado: Estado) -> Literal["agente", "reescreverConsulta"]:
+        if estado["trechosRespondem"] or len(consultasDoTurno(estado)) > MAX_REESCRITAS:
+            return "agente"
+        return "reescreverConsulta"
 
     def depoisDasFerramentas(estado: Estado) -> Literal["avaliarTrechos", "agente"]:
         return "avaliarTrechos" if resultadosDaBusca(estado) else "agente"
@@ -94,10 +134,12 @@ async def montarGrafo(adaptador: MCPAdapter):
     grafo.add_node("agente", agente)
     grafo.add_node("ferramentas", ToolNode(ferramentas))
     grafo.add_node("avaliarTrechos", avaliarTrechos)
+    grafo.add_node("reescreverConsulta", reescreverConsulta)
     grafo.add_edge(START, "agente")
     grafo.add_conditional_edges("agente", tools_condition, {"tools": "ferramentas", END: END})
     grafo.add_conditional_edges("ferramentas", depoisDasFerramentas)
-    grafo.add_edge("avaliarTrechos", "agente")
+    grafo.add_conditional_edges("avaliarTrechos", depoisDaAvaliacao)
+    grafo.add_edge("reescreverConsulta", "agente")
     return grafo.compile()
 
 
@@ -117,6 +159,8 @@ if __name__ == "__main__":
                             print("->", chamada["name"], chamada["args"])
                     if no == "avaliarTrechos":
                         print("-> avaliarTrechos: os trechos respondem?", atualizacao["trechosRespondem"])
+                    if no == "reescreverConsulta":
+                        print("-> reescreverConsulta:", atualizacao["consultaReescrita"])
         print(ultima.text)
 
     asyncio.run(perguntar(" ".join(sys.argv[1:]) or "Qual o prazo para comunicar um incidente de segurança à ANPD?"))
