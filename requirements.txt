@@ -11,3 +11,4 @@ langchain-openrouter
 mcp-server-time
 pyyaml
 streamlit
+langgraph-checkpoint-sqlite

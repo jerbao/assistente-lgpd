@@ -13,7 +13,7 @@ import yaml
 from pydantic import BaseModel, Field
 from typing_extensions import NotRequired, TypedDict
 
-from indexar import PASTA_PROJETO
+from indexar import PASTA_DADOS, PASTA_PROJETO
 
 MODELO = "openrouter:google/gemma-4-26b-a4b-it"
 
@@ -63,6 +63,7 @@ MAX_REESCRITAS = 2
 
 
 PASTA_SKILLS = PASTA_PROJETO / "skills"
+ARQUIVO_MEMORIA = PASTA_DADOS / "conversas.db"
 
 
 def lerCatalogo() -> str:
@@ -123,7 +124,7 @@ def criarAdaptador() -> MCPAdapter:
     }})
 
 
-async def montarGrafo(adaptador: MCPAdapter):
+async def montarGrafo(adaptador: MCPAdapter, memoria=None):
     ferramentas = [*await adaptador.list_tools(), carregarSkill]
     sistema = SISTEMA.format(catalogo=lerCatalogo())
     modeloBase = init_chat_model(MODELO, temperature=0.0)
@@ -166,7 +167,7 @@ async def montarGrafo(adaptador: MCPAdapter):
     grafo.add_conditional_edges("ferramentas", depoisDasFerramentas)
     grafo.add_conditional_edges("avaliarTrechos", depoisDaAvaliacao)
     grafo.add_edge("reescreverConsulta", "agente")
-    return grafo.compile()
+    return grafo.compile(checkpointer=memoria)
 
 
 if __name__ == "__main__":
