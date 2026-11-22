@@ -8,9 +8,10 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-load_dotenv()
+PASTA_PROJETO = Path(__file__).resolve().parent
+load_dotenv(PASTA_PROJETO / ".env")
 
-PASTA_DADOS = Path("dados")
+PASTA_DADOS = PASTA_PROJETO / "dados"
 PASTA_INDICE = PASTA_DADOS / "chroma"
 
 
