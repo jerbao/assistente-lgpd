@@ -36,8 +36,8 @@ def dividirArtigos(artigos: dict[str, str]) -> list[Document]:
     divisor = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200, separators=[" § ", " Parágrafo único", "; ", " "])
     trechos = []
     for numero, texto in artigos.items():
-        for pedaco in divisor.split_text(texto):
-            trechos.append(Document(page_content=f"[LGPD, art. {numero}] {pedaco}", metadata={"artigo": numero}))
+        for posicao, pedaco in enumerate(divisor.split_text(texto)):
+            trechos.append(Document(id=f"art{numero}-{posicao}", page_content=f"[LGPD, art. {numero}] {pedaco}", metadata={"artigo": numero}))
     return trechos
 
 
@@ -45,5 +45,5 @@ if __name__ == "__main__":
     artigos = json.loads((PASTA_DADOS / "artigos.json").read_text())
     trechos = dividirArtigos(artigos)
     indice = abrirIndice()
-    indice.add_documents(trechos)
+    indice.add_documents(trechos, ids=[trecho.id for trecho in trechos])
     print(len(trechos), "trechos indexados, total no índice:", len(indice.get()["ids"]))
