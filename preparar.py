@@ -18,6 +18,14 @@ def baixar(url: str, destino: Path) -> Path:
     return destino
 
 
+def limparArtigo(texto: str) -> str:
+    texto = re.sub(r"\(Revogad[oa]s? pel[oa][^)]*\)", "(Revogado)", texto)
+    texto = re.sub(r"\((Incluíd|Redação dada|Vide|Promulgação|Produção de efeito)[^)]*\)\s*(Vigência)?", "", texto)
+    texto = re.sub(r"\(Vigência\)", "", texto)
+    texto = re.sub(r"\s+", " ", texto)
+    return texto.split(" Brasília")[0].strip()
+
+
 def separarArtigos(arquivoHtml: Path) -> dict[str, str]:
     pagina = BeautifulSoup(arquivoHtml.read_bytes().decode("cp1252"), "html.parser")
     texto = pagina.get_text("\n")
@@ -26,7 +34,7 @@ def separarArtigos(arquivoHtml: Path) -> dict[str, str]:
     for atual, proximo in zip(inicios, inicios[1:] + [None]):
         numero = atual.group(1) + (atual.group(2) or "").replace(" ", "")
         corpo = texto[atual.start(): proximo.start() if proximo else len(texto)]
-        artigos.setdefault(numero, re.sub(r"\s+", " ", corpo).strip())
+        artigos.setdefault(numero, limparArtigo(corpo))
     return artigos
 
 
