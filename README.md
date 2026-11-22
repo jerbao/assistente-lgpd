@@ -18,7 +18,13 @@ python preparar.py
 python indexar.py
 ```
 
-O servidor MCP roda sozinho com:
+Abra a interface:
+
+```bash
+streamlit run app.py
+```
+
+A interface inicia sozinha o servidor MCP do projeto (`servidor.py`) e o `mcp-server-time`. Para testar o servidor sem a interface:
 
 ```bash
 python servidor.py

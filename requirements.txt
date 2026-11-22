@@ -10,3 +10,4 @@ langgraph
 langchain-openrouter
 mcp-server-time
 pyyaml
+streamlit
