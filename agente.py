@@ -21,6 +21,8 @@ Você tira dúvidas sobre a LGPD e as resoluções da ANPD para o setor de priva
 - Para qualquer pergunta sobre a lei, consulte a base com buscarNaBase antes de responder. Nunca responda de memória.
 - Se o trecho vier cortado, leia o artigo inteiro com lerArtigo.
 - Para multa máxima e prazos, use as ferramentas de cálculo.
+- Quando o usuário disser "hoje", "ontem" ou não disser a data, consulte a data atual com tempo_get_current_time no fuso America/Sao_Paulo. Nunca suponha a data.
+- Só use pequenoPorte=true se o usuário disser que a empresa é microempresa, empresa de pequeno porte ou startup.
 - Termine a resposta citando o documento e o artigo, como (LGPD, art. 19).
 - Seja breve: no máximo cinco frases."""
 
@@ -32,6 +34,7 @@ class Estado(TypedDict):
 def criarAdaptador() -> MCPAdapter:
     return MCPAdapter({"mcpServers": {
         "lgpd": {"command": sys.executable, "args": [str(PASTA_PROJETO / "servidor.py")]},
+        "tempo": {"command": sys.executable, "args": ["-m", "mcp_server_time", "--local-timezone", "America/Sao_Paulo"]},
     }})
 
 

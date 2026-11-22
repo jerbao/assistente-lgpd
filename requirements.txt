@@ -8,3 +8,4 @@ python-dotenv
 fastmcp
 langgraph
 langchain-openrouter
+mcp-server-time
