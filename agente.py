@@ -113,6 +113,19 @@ RECUSAS = {
 }
 
 
+DADOS_PESSOAIS = {
+    "[CPF]": re.compile(r"\b\d{3}[.\s]?\d{3}[.\s]?\d{3}[-\s]?\d{2}\b"),
+    "[E-MAIL]": re.compile(r"\b[\w.+-]+@[\w-]+(\.[\w-]+)+\b"),
+    "[TELEFONE]": re.compile(r"(\(\d{2}\)\s?|\b\d{2}\s)9?\d{4}[-\s]?\d{4}\b"),
+}
+
+
+def mascararDadosPessoais(texto: str) -> str:
+    for marcador, padrao in DADOS_PESSOAIS.items():
+        texto = padrao.sub(marcador, texto)
+    return texto
+
+
 class Triagem(BaseModel):
     categoria: Literal["permitido", "foraDoEscopo", "injecao"]
 
@@ -180,6 +193,13 @@ async def montarGrafo(adaptador: MCPAdapter, memoria=None):
             return {"bloqueio": None}
         return {"bloqueio": categoria, "messages": [AIMessage(RECUSAS[categoria])]}
 
+    async def guardrailSaida(estado: Estado) -> dict:
+        resposta = estado["messages"][-1]
+        mascarada = mascararDadosPessoais(resposta.text)
+        if mascarada == resposta.text:
+            return {}
+        return {"messages": [AIMessage(mascarada, id=resposta.id)]}
+
     def depoisDaEntrada(estado: Estado) -> Literal["agente", "__end__"]:
         return END if estado.get("bloqueio") else "agente"
 
@@ -215,12 +235,14 @@ async def montarGrafo(adaptador: MCPAdapter, memoria=None):
     grafo = StateGraph(Estado)
     grafo.add_node("guardrailEntrada", guardrailEntrada)
     grafo.add_node("agente", agente)
+    grafo.add_node("guardrailSaida", guardrailSaida)
     grafo.add_node("ferramentas", ToolNode(ferramentas))
     grafo.add_node("avaliarTrechos", avaliarTrechos)
     grafo.add_node("reescreverConsulta", reescreverConsulta)
     grafo.add_edge(START, "guardrailEntrada")
     grafo.add_conditional_edges("guardrailEntrada", depoisDaEntrada)
-    grafo.add_conditional_edges("agente", tools_condition, {"tools": "ferramentas", END: END})
+    grafo.add_conditional_edges("agente", tools_condition, {"tools": "ferramentas", END: "guardrailSaida"})
+    grafo.add_edge("guardrailSaida", END)
     grafo.add_conditional_edges("ferramentas", depoisDasFerramentas)
     grafo.add_conditional_edges("avaliarTrechos", depoisDaAvaliacao)
     grafo.add_edge("reescreverConsulta", "agente")
