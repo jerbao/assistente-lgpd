@@ -2,17 +2,43 @@ import asyncio
 import uuid
 
 import streamlit as st
+from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from agente import ARQUIVO_MEMORIA, criarAdaptador, montarGrafo
 
 
-async def responder(pergunta: str, conversa: str) -> str:
+def passosDoTurno(mensagens: list) -> tuple[list[str], list[str]]:
+    ferramentas, skills = [], []
+    for mensagem in mensagens:
+        for chamada in getattr(mensagem, "tool_calls", []):
+            if chamada["name"] == "carregarSkill":
+                skills.append(chamada["args"]["nome"])
+            else:
+                argumentos = ", ".join(f"{chave}={valor!r}" for chave, valor in chamada["args"].items())
+                ferramentas.append(f"{chamada['name']}({argumentos})")
+    return ferramentas, skills
+
+
+async def responder(pergunta: str, conversa: str) -> dict:
     adaptador = criarAdaptador()
     async with adaptador, AsyncSqliteSaver.from_conn_string(str(ARQUIVO_MEMORIA)) as memoria:
         grafo = await montarGrafo(adaptador, memoria)
         resultado = await grafo.ainvoke({"messages": [("user", pergunta)]}, {"configurable": {"thread_id": conversa}})
-    return resultado["messages"][-1].text
+    mensagens = resultado["messages"]
+    inicio = max(i for i, mensagem in enumerate(mensagens) if isinstance(mensagem, HumanMessage))
+    ferramentas, skills = passosDoTurno(mensagens[inicio:])
+    return {"texto": mensagens[-1].text, "ferramentas": ferramentas, "skills": skills}
+
+
+def mostrarResposta(resposta: dict) -> None:
+    st.markdown(resposta["texto"])
+    if resposta["skills"]:
+        st.caption("Skills carregadas: " + ", ".join(f"`{skill}`" for skill in resposta["skills"]))
+    if resposta["ferramentas"]:
+        with st.expander(f"Ferramentas chamadas ({len(resposta['ferramentas'])})"):
+            for ferramenta in resposta["ferramentas"]:
+                st.code(ferramenta, language=None)
 
 
 st.set_page_config(page_title="Assistente LGPD", page_icon="🔒")
@@ -29,9 +55,12 @@ with st.sidebar:
         st.session_state.historico = []
     st.caption(f"Conversa {st.session_state.conversa[:8]}")
 
-for papel, texto in st.session_state.historico:
+for papel, conteudo in st.session_state.historico:
     with st.chat_message(papel):
-        st.markdown(texto)
+        if papel == "user":
+            st.markdown(conteudo)
+        else:
+            mostrarResposta(conteudo)
 
 if pergunta := st.chat_input("Pergunte sobre a LGPD"):
     st.session_state.historico.append(("user", pergunta))
@@ -40,5 +69,5 @@ if pergunta := st.chat_input("Pergunte sobre a LGPD"):
     with st.chat_message("assistant"):
         with st.spinner("Consultando a LGPD..."):
             resposta = asyncio.run(responder(pergunta, st.session_state.conversa))
-        st.markdown(resposta)
+        mostrarResposta(resposta)
     st.session_state.historico.append(("assistant", resposta))
