@@ -260,7 +260,7 @@ if __name__ == "__main__":
             ultima = None
             async for passo in grafo.astream({"messages": [("user", pergunta)]}, stream_mode="updates"):
                 for no, atualizacao in passo.items():
-                    for mensagem in atualizacao.get("messages", []):
+                    for mensagem in (atualizacao or {}).get("messages", []):
                         ultima = mensagem
                         for chamada in getattr(mensagem, "tool_calls", []):
                             print("->", chamada["name"], chamada["args"])
